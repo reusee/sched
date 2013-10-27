@@ -56,6 +56,7 @@ func checkJobs(jobDir string) (hasJob bool) {
 	nextTime := time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)
 	var nextCmd string
 	var nextArgs []string
+	var nextJob string
 	filepath.Walk(jobDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -74,13 +75,14 @@ func checkJobs(jobDir string) (hasJob bool) {
 			nextTime = t
 			nextCmd = cmd
 			nextArgs = args
+			nextJob = filepath.Base(path)
 		} else if t.Before(time.Now()) {
-			fmt.Printf("Job expired: skip %s\n", path)
+			fmt.Printf("Expired: %s\n", path)
 		}
 		return nil
 	})
 	if nextCmd != "" {
-		fmt.Printf("Next: %v, now %v\n", nextTime, time.Now())
+		fmt.Printf("Next: %s %v %v\n", nextJob, nextTime, nextTime.Sub(time.Now()))
 		tick := time.NewTicker(time.Minute * 1)
 		select {
 		case <-time.After(nextTime.Sub(time.Now())):
@@ -102,7 +104,7 @@ func parse(input *bufio.Reader) (time.Time, string, []string, error) {
 	if err != nil {
 		return time.Now(), "", nil, errors.New("read line")
 	}
-	t, err := parseTime(line)
+	t, err := parseDateTime(line)
 	if err != nil {
 		return time.Now(), "", nil, errors.New("parse datetime")
 	}
@@ -125,49 +127,112 @@ func parse(input *bufio.Reader) (time.Time, string, []string, error) {
 	return t, cmd, args, nil
 }
 
-func parseTime(input string) (time.Time, error) {
+func parseDateTime(input string) (time.Time, error) {
 	specs := strings.Split(input, " ")
 	for i, spec := range specs {
 		specs[i] = strings.TrimSpace(spec)
 	}
-	var year, month, day, hour, minute, second int
+	var year, month, day, hour, minute, second, dayOfWeek int
+	var isRepeat, isHourRepeat, isDayRepeat, isWeekRepeat, isMonthRepeat bool
+	var ret time.Time
+	_ = dayOfWeek
+	_ = isDayRepeat
+	_ = isWeekRepeat
+	_ = isMonthRepeat
 
-	datePattern := regexp.MustCompile(`^([0-9]{2})?[0-9]{2}-[0-9]{2}-[0-9]{2}|[0-9]{2}-[0-9]{2}$`)
-	timePattern := regexp.MustCompile(`^[0-9]{2}:[0-9]{2}(:[0-9]{2})?`)
+	datePattern := regexp.MustCompile(`^([0-9]{2})?[0-9]{2}-[0-9]{1,2}-[0-9]{1,2}|[0-9]{1,2}-[0-9]{1,2}$`)
+	timePattern := regexp.MustCompile(`^[0-9]{1,2}:[0-9]{1,2}(:[0-9]{1,2})?$`)
+	minuteSecondPattern := regexp.MustCompile(`^[0-9]{1,2}(:[0-9]{1,2})?$`)
 	for _, spec := range specs {
 		switch {
-		case datePattern.MatchString(spec): // date
-			dashCount := strings.Count(spec, "-")
-			if dashCount == 2 {
-				n, err := fmt.Sscanf(spec, "%d-%d-%d", &year, &month, &day)
-				if n != 3 || err != nil {
-					return time.Now(), errors.New("parse date")
-				}
-			} else if dashCount == 1 {
-				n, err := fmt.Sscanf(spec, "%d-%d", &month, &day)
-				if n != 3 || err != nil {
-					return time.Now(), errors.New("parse date")
-				}
-				year = time.Now().Year()
+		case !isRepeat && datePattern.MatchString(spec): // date
+			err := parseDate(spec, &year, &month, &day)
+			if err != nil {
+				return time.Now(), err
 			}
-		case timePattern.MatchString(spec): // time
-			semiCount := strings.Count(spec, ":")
-			if semiCount == 2 {
-				n, err := fmt.Sscanf(spec, "%d:%d:%d", &hour, &minute, &second)
-				if n != 3 || err != nil {
-					return time.Now(), errors.New("parse time")
-				}
-			} else if semiCount == 1 {
-				n, err := fmt.Sscanf(spec, "%d:%d", &hour, &minute)
-				if n != 2 || err != nil {
-					return time.Now(), errors.New("parse time")
-				}
+		case !isRepeat && timePattern.MatchString(spec): // time
+			err := parseTime(spec, &hour, &minute, &second)
+			if err != nil {
+				return time.Now(), err
+			}
+		case spec == "every": // repeat
+			isRepeat = true
+		case spec == "hour" && isRepeat: // hour repeat
+			isHourRepeat = true
+		case isHourRepeat && minuteSecondPattern.MatchString(spec):
+			err := parseMinuteSecond(spec, &minute, &second)
+			if err != nil {
+				return time.Now(), err
 			}
 		default:
 			fmt.Printf("Error time spec: %s\n", spec)
 		}
 	}
 
-	t := time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
-	return t, nil
+	if isHourRepeat {
+		ret = nextHourRepeat(minute, second)
+	} else if !isRepeat {
+		ret = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
+	} else {
+		return time.Now(), errors.New("invalid time spec")
+	}
+	return ret, nil
+}
+
+func parseDate(spec string, year, month, day *int) error {
+	dashCount := strings.Count(spec, "-")
+	if dashCount == 2 {
+		n, err := fmt.Sscanf(spec, "%d-%d-%d", year, month, day)
+		if n != 3 || err != nil {
+			return errors.New("parse date")
+		}
+	} else if dashCount == 1 {
+		n, err := fmt.Sscanf(spec, "%d-%d", month, day)
+		if n != 3 || err != nil {
+			return errors.New("parse date")
+		}
+		*year = time.Now().Year()
+	}
+	return nil
+}
+
+func parseTime(spec string, hour, minute, second *int) error {
+	semiCount := strings.Count(spec, ":")
+	if semiCount == 2 {
+		n, err := fmt.Sscanf(spec, "%d:%d:%d", hour, minute, second)
+		if n != 3 || err != nil {
+			return errors.New("parse time")
+		}
+	} else if semiCount == 1 {
+		n, err := fmt.Sscanf(spec, "%d:%d", hour, minute)
+		if n != 2 || err != nil {
+			return errors.New("parse time")
+		}
+	}
+	return nil
+}
+
+func parseMinuteSecond(spec string, minute, second *int) error {
+	if strings.Contains(spec, ":") {
+		n, err := fmt.Sscanf(spec, "%d:%d", minute, second)
+		if n != 2 || err != nil {
+			return errors.New("parse minute:second")
+		}
+	} else {
+		n, err := fmt.Sscanf(spec, "%d", minute)
+		if n != 1 || err != nil {
+			return errors.New("parse minute")
+		}
+	}
+	return nil
+}
+
+func nextHourRepeat(minute, second int) time.Time {
+	y, m, d := time.Now().Date()
+	h, _, _ := time.Now().Clock()
+	t := time.Date(y, m, d, h, minute, second, 0, time.Local)
+	if t.Before(time.Now()) {
+		t = t.Add(time.Hour * 1)
+	}
+	return t
 }
