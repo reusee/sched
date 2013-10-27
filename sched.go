@@ -132,16 +132,16 @@ func parseDateTime(input string) (time.Time, error) {
 	for i, spec := range specs {
 		specs[i] = strings.TrimSpace(spec)
 	}
-	var year, month, day, hour, minute, second, dayOfWeek int
+	var year, month, day, hour, minute, second int
 	var isRepeat, isHourRepeat, isDayRepeat, isWeekRepeat, isMonthRepeat bool
 	var ret time.Time
-	_ = dayOfWeek
-	_ = isWeekRepeat
+	var dayOfWeek time.Weekday
 	_ = isMonthRepeat
 
 	datePattern := regexp.MustCompile(`^([0-9]{2})?[0-9]{2}-[0-9]{1,2}-[0-9]{1,2}|[0-9]{1,2}-[0-9]{1,2}$`)
 	timePattern := regexp.MustCompile(`^[0-9]{1,2}:[0-9]{1,2}(:[0-9]{1,2})?$`)
 	minuteSecondPattern := regexp.MustCompile(`^[0-9]{1,2}(:[0-9]{1,2})?$`)
+	dayOfWeekPattern := regexp.MustCompile(`(?i)^sun[a-z]*|mon[a-z]*|tue[a-z]*|wed[a-z]*|thu[a-z]*|fri[a-z]*|sat[a-z]*$`)
 	for _, spec := range specs {
 		switch {
 		case !isRepeat && datePattern.MatchString(spec): // date
@@ -160,6 +160,17 @@ func parseDateTime(input string) (time.Time, error) {
 			isHourRepeat = true
 		case spec == "day" && isRepeat: // day repeat
 			isDayRepeat = true
+		case isRepeat && dayOfWeekPattern.MatchString(spec):
+			err := parseDayOfWeek(spec, &dayOfWeek)
+			if err != nil {
+				return time.Now(), err
+			}
+			isWeekRepeat = true
+		case isWeekRepeat && timePattern.MatchString(spec):
+			err := parseTime(spec, &hour, &minute, &second)
+			if err != nil {
+				return time.Now(), err
+			}
 		case isHourRepeat && minuteSecondPattern.MatchString(spec):
 			err := parseMinuteSecond(spec, &minute, &second)
 			if err != nil {
@@ -179,6 +190,8 @@ func parseDateTime(input string) (time.Time, error) {
 		ret = nextHourRepeat(minute, second)
 	} else if isDayRepeat {
 		ret = nextDayRepeat(hour, minute, second)
+	} else if isWeekRepeat {
+		ret = nextWeekRepeat(dayOfWeek, hour, minute, second)
 	} else if !isRepeat {
 		ret = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
 	} else {
@@ -235,6 +248,29 @@ func parseMinuteSecond(spec string, minute, second *int) error {
 	return nil
 }
 
+func parseDayOfWeek(spec string, day *time.Weekday) error {
+	spec = strings.ToLower(spec)
+	switch {
+	case strings.HasPrefix(spec, "sun"):
+		*day = time.Sunday
+	case strings.HasPrefix(spec, "mon"):
+		*day = time.Monday
+	case strings.HasPrefix(spec, "tue"):
+		*day = time.Tuesday
+	case strings.HasPrefix(spec, "wed"):
+		*day = time.Wednesday
+	case strings.HasPrefix(spec, "thu"):
+		*day = time.Thursday
+	case strings.HasPrefix(spec, "fri"):
+		*day = time.Friday
+	case strings.HasPrefix(spec, "sat"):
+		*day = time.Saturday
+	default:
+		return errors.New("parse day of week")
+	}
+	return nil
+}
+
 func nextHourRepeat(minute, second int) time.Time {
 	y, m, d := time.Now().Date()
 	h, _, _ := time.Now().Clock()
@@ -250,6 +286,21 @@ func nextDayRepeat(hour, minute, second int) time.Time {
 	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
 	if t.Before(time.Now()) {
 		t = t.Add(time.Hour * 24)
+	}
+	return t
+}
+
+func nextWeekRepeat(dayOfWeek time.Weekday, hour, minute, second int) time.Time {
+	y, m, d := time.Now().Date()
+	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
+	for t.Weekday() != dayOfWeek {
+		t = t.Add(time.Hour * 24)
+	}
+	if t.Before(time.Now()) {
+		t = t.Add(time.Hour * 24)
+		for t.Weekday() != dayOfWeek {
+			t = t.Add(time.Hour * 24)
+		}
 	}
 	return t
 }
