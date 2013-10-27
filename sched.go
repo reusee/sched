@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -136,12 +137,12 @@ func parseDateTime(input string) (time.Time, error) {
 	var isRepeat, isHourRepeat, isDayRepeat, isWeekRepeat, isMonthRepeat bool
 	var ret time.Time
 	var dayOfWeek time.Weekday
-	_ = isMonthRepeat
 
 	datePattern := regexp.MustCompile(`^([0-9]{2})?[0-9]{2}-[0-9]{1,2}-[0-9]{1,2}|[0-9]{1,2}-[0-9]{1,2}$`)
 	timePattern := regexp.MustCompile(`^[0-9]{1,2}:[0-9]{1,2}(:[0-9]{1,2})?$`)
 	minuteSecondPattern := regexp.MustCompile(`^[0-9]{1,2}(:[0-9]{1,2})?$`)
 	dayOfWeekPattern := regexp.MustCompile(`(?i)^sun[a-z]*|mon[a-z]*|tue[a-z]*|wed[a-z]*|thu[a-z]*|fri[a-z]*|sat[a-z]*$`)
+	dayOfMonthPattern := regexp.MustCompile(`(?i)^[0-9]{1,2}(st|nd|rd|th)$`)
 	for _, spec := range specs {
 		switch {
 		case !isRepeat && datePattern.MatchString(spec): // date
@@ -171,6 +172,17 @@ func parseDateTime(input string) (time.Time, error) {
 			if err != nil {
 				return time.Now(), err
 			}
+		case isRepeat && dayOfMonthPattern.MatchString(spec):
+			err := parseDayOfMonth(spec, &day)
+			if err != nil {
+				return time.Now(), err
+			}
+			isMonthRepeat = true
+		case isMonthRepeat && timePattern.MatchString(spec):
+			err := parseTime(spec, &hour, &minute, &second)
+			if err != nil {
+				return time.Now(), err
+			}
 		case isHourRepeat && minuteSecondPattern.MatchString(spec):
 			err := parseMinuteSecond(spec, &minute, &second)
 			if err != nil {
@@ -192,6 +204,8 @@ func parseDateTime(input string) (time.Time, error) {
 		ret = nextDayRepeat(hour, minute, second)
 	} else if isWeekRepeat {
 		ret = nextWeekRepeat(dayOfWeek, hour, minute, second)
+	} else if isMonthRepeat {
+		ret = nextMonthRepeat(day, hour, minute, second)
 	} else if !isRepeat {
 		ret = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
 	} else {
@@ -271,6 +285,19 @@ func parseDayOfWeek(spec string, day *time.Weekday) error {
 	return nil
 }
 
+func parseDayOfMonth(spec string, day *int) error {
+	ds := regexp.MustCompile(`[0-9]+`).FindString(spec)
+	if ds == "" {
+		return errors.New("parse day of month")
+	}
+	d, err := strconv.Atoi(ds)
+	if err != nil {
+		return errors.New("parse day of month")
+	}
+	*day = d
+	return nil
+}
+
 func nextHourRepeat(minute, second int) time.Time {
 	y, m, d := time.Now().Date()
 	h, _, _ := time.Now().Clock()
@@ -299,6 +326,21 @@ func nextWeekRepeat(dayOfWeek time.Weekday, hour, minute, second int) time.Time 
 	if t.Before(time.Now()) {
 		t = t.Add(time.Hour * 24)
 		for t.Weekday() != dayOfWeek {
+			t = t.Add(time.Hour * 24)
+		}
+	}
+	return t
+}
+
+func nextMonthRepeat(day, hour, minute, second int) time.Time {
+	y, m, _ := time.Now().Date()
+	t := time.Date(y, m, day, hour, minute, second, 0, time.Local)
+	for t.Day() != day {
+		t = t.Add(time.Hour * 24)
+	}
+	if t.Before(time.Now()) {
+		t = t.Add(time.Hour * 24)
+		for t.Day() != day {
 			t = t.Add(time.Hour * 24)
 		}
 	}
