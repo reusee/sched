@@ -136,7 +136,6 @@ func parseDateTime(input string) (time.Time, error) {
 	var isRepeat, isHourRepeat, isDayRepeat, isWeekRepeat, isMonthRepeat bool
 	var ret time.Time
 	_ = dayOfWeek
-	_ = isDayRepeat
 	_ = isWeekRepeat
 	_ = isMonthRepeat
 
@@ -159,8 +158,15 @@ func parseDateTime(input string) (time.Time, error) {
 			isRepeat = true
 		case spec == "hour" && isRepeat: // hour repeat
 			isHourRepeat = true
+		case spec == "day" && isRepeat: // day repeat
+			isDayRepeat = true
 		case isHourRepeat && minuteSecondPattern.MatchString(spec):
 			err := parseMinuteSecond(spec, &minute, &second)
+			if err != nil {
+				return time.Now(), err
+			}
+		case isDayRepeat && timePattern.MatchString(spec):
+			err := parseTime(spec, &hour, &minute, &second)
 			if err != nil {
 				return time.Now(), err
 			}
@@ -171,6 +177,8 @@ func parseDateTime(input string) (time.Time, error) {
 
 	if isHourRepeat {
 		ret = nextHourRepeat(minute, second)
+	} else if isDayRepeat {
+		ret = nextDayRepeat(hour, minute, second)
 	} else if !isRepeat {
 		ret = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
 	} else {
@@ -233,6 +241,15 @@ func nextHourRepeat(minute, second int) time.Time {
 	t := time.Date(y, m, d, h, minute, second, 0, time.Local)
 	if t.Before(time.Now()) {
 		t = t.Add(time.Hour * 1)
+	}
+	return t
+}
+
+func nextDayRepeat(hour, minute, second int) time.Time {
+	y, m, d := time.Now().Date()
+	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
+	if t.Before(time.Now()) {
+		t = t.Add(time.Hour * 24)
 	}
 	return t
 }
