@@ -67,18 +67,18 @@ func checkJobs(jobDir string) (hasJob bool) {
 			fmt.Printf("Error: %v\n", err)
 			return nil
 		}
-		t, cmd, args, err := parse(bufio.NewReader(input))
+		ts, cmd, args, err := parse(bufio.NewReader(input))
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return nil
 		}
-		if t.After(time.Now()) && t.Before(nextTime) {
-			nextTime = t
-			nextCmd = cmd
-			nextArgs = args
-			nextJob = filepath.Base(path)
-		} else if t.Before(time.Now()) {
-			fmt.Printf("Expired: %s\n", path)
+		for _, t := range ts {
+			if t.After(time.Now()) && t.Before(nextTime) {
+				nextTime = t
+				nextCmd = cmd
+				nextArgs = args
+				nextJob = filepath.Base(path)
+			}
 		}
 		return nil
 	})
@@ -100,32 +100,53 @@ func checkJobs(jobDir string) (hasJob bool) {
 	return false
 }
 
-func parse(input *bufio.Reader) (time.Time, string, []string, error) {
-	line, err := input.ReadString('\n')
-	if err != nil {
-		return time.Now(), "", nil, errors.New("read line")
-	}
-	t, err := parseDateTime(line)
-	if err != nil {
-		return time.Now(), "", nil, errors.New("parse datetime")
-	}
-	cmd, err := input.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return time.Now(), "", nil, errors.New("parse command")
-	}
-	cmd = strings.TrimSpace(cmd)
-	args := make([]string, 0)
+const (
+	parsingTime = iota
+	parsingArgs
+)
+
+func parse(input *bufio.Reader) ([]time.Time, string, []string, error) {
+	lines := make([]string, 0)
 	for {
-		arg, err := input.ReadString('\n')
+		line, err := input.ReadString('\n')
+		line = strings.TrimSpace(line)
 		if err == io.EOF {
-			args = append(args, arg)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				lines = append(lines, line)
+			}
 			break
 		} else if err != nil {
-			break
+			return nil, "", nil, errors.New("reading file")
 		}
-		args = append(args, arg)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			lines = append(lines, line)
+		}
 	}
-	return t, cmd, args, nil
+
+	state := parsingTime
+	ts := make([]time.Time, 0)
+	var cmd string
+	args := make([]string, 0)
+	for i, line := range lines {
+		switch state {
+		case parsingTime:
+			if i == 0 || strings.HasPrefix(line, "and ") {
+				line = strings.TrimPrefix(line, "and ")
+				t, err := parseDateTime(line)
+				if err != nil {
+					return nil, "", nil, errors.New("parse datetime")
+				}
+				ts = append(ts, t)
+			} else {
+				cmd = line
+				state = parsingArgs
+			}
+		case parsingArgs:
+			args = append(args, line)
+		}
+	}
+
+	return ts, cmd, args, nil
 }
 
 func parseDateTime(input string) (time.Time, error) {
