@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/howeyc/fsnotify"
 	"io"
 	"log"
 	"os"
@@ -19,9 +20,15 @@ import (
 )
 
 var signals = make(chan os.Signal)
+var watcher *fsnotify.Watcher
 
 func init() {
 	signal.Notify(signals, syscall.SIGUSR1)
+	var err error
+	watcher, err = fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
@@ -39,6 +46,10 @@ func main() {
 	} else if err != nil {
 		log.Fatal(err)
 	}
+	err = watcher.Watch(jobDir)
+	if err != nil {
+		log.Fatal(err)
+	}
 	for {
 		hasJob := checkJobs(jobDir)
 		if hasJob {
@@ -46,7 +57,7 @@ func main() {
 		} else {
 			select {
 			case <-signals:
-			case <-time.After(time.Minute * 1):
+			case <-watcher.Event:
 			}
 			continue
 		}
@@ -84,7 +95,6 @@ func checkJobs(jobDir string) (hasJob bool) {
 	})
 	if nextCmd != "" {
 		fmt.Printf("Next: %s %v %v\n", nextJob, nextTime, nextTime.Sub(time.Now()))
-		tick := time.NewTicker(time.Minute * 1)
 		select {
 		case <-time.After(nextTime.Sub(time.Now())):
 			fmt.Printf("%v: Run %s %v\n", time.Now(), nextCmd, nextArgs)
@@ -93,7 +103,7 @@ func checkJobs(jobDir string) (hasJob bool) {
 			return true
 		case <-signals:
 			return true
-		case <-tick.C: // TODO
+		case <-watcher.Event:
 			return true
 		}
 	}
