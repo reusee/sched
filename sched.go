@@ -317,6 +317,9 @@ func parseDate(spec string, year, month, day *int) error {
 		if n != 3 || err != nil {
 			return errors.New("parse date")
 		}
+		if *year < 1000 {
+			*year += 2000
+		}
 	} else if dashCount == 1 {
 		n, err := fmt.Sscanf(spec, "%d-%d", month, day)
 		if n != 3 || err != nil {
