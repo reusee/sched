@@ -64,11 +64,34 @@ func main() {
 	}
 }
 
+const (
+	EXPIRED = iota
+	NOW
+	WAIT
+)
+
+type Time struct {
+	Time    time.Time
+	Comment string
+	State   int
+}
+
+type Job struct {
+	Start *Time
+	Cmd   string
+	Args  []string
+}
+
+func (self *Job) Run() {
+	fmt.Printf("Run: %s %v\n", self.Cmd, self.Args)
+	exec.Command(self.Cmd, self.Args...).Start()
+}
+
 func checkJobs(jobDir string) (hasJob bool) {
-	nextTime := &Time{Time: time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)}
-	var nextCmd string
-	var nextArgs []string
-	var nextJob string
+	nextJob := &Job{
+		Start: &Time{Time: time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)},
+	}
+	nowJobs := make([]*Job, 0)
 	filepath.Walk(jobDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -84,23 +107,34 @@ func checkJobs(jobDir string) (hasJob bool) {
 			return nil
 		}
 		for _, t := range ts {
-			if t.Time.After(time.Now()) && t.Time.Before(nextTime.Time) {
-				nextTime = t
-				nextCmd = cmd
-				nextArgs = args
-				nextJob = filepath.Base(path)
+			switch t.State {
+			case WAIT:
+				if t.Time.Before(nextJob.Start.Time) {
+					nextJob.Start = t
+					nextJob.Cmd = cmd
+					nextJob.Args = args
+				}
+			case NOW:
+				nowJobs = append(nowJobs, &Job{
+					Cmd:  cmd,
+					Args: args,
+				})
+			case EXPIRED:
+				fmt.Printf("Expired: %s %s %v %s\n", t.Time.Format(time.RFC822), cmd, args, t.Comment)
 			}
 		}
 		return nil
 	})
 
-	if nextCmd != "" {
-		fmt.Printf("Next: %s -> %s -> %v -> %s\n", nextJob, nextTime.Time.Format(time.RFC822), nextTime.Time.Sub(time.Now()), nextTime.Comment)
+	for _, job := range nowJobs {
+		job.Run()
+	}
+
+	if nextJob.Cmd != "" {
+		fmt.Printf("Next: %s -> %v -> %s\n", nextJob.Start.Time.Format(time.RFC822), nextJob.Start.Time.Sub(time.Now()), nextJob.Start.Comment)
 		select {
-		case <-time.After(nextTime.Time.Sub(time.Now())):
-			fmt.Printf("Run: %s %s %v\n", nextTime.Comment, nextCmd, nextArgs)
-			cmd := exec.Command(nextCmd, nextArgs...)
-			cmd.Start()
+		case <-time.After(nextJob.Start.Time.Sub(time.Now())):
+			nextJob.Run()
 			return true
 		case <-signals:
 			return true
@@ -115,11 +149,6 @@ const (
 	parsingTime = iota
 	parsingArgs
 )
-
-type Time struct {
-	Time    time.Time
-	Comment string
-}
 
 func parse(input *bufio.Reader) ([]*Time, string, []string, error) {
 	lines := make([]string, 0)
@@ -179,16 +208,19 @@ func parseDateTime(input string) (*Time, error) {
 			specs = append(specs, spec)
 		}
 	}
+	comment := strings.Join(comments, " ")
+
 	var year, month, day, hour, minute, second int
 	var isRepeat, isHourRepeat, isDayRepeat, isWeekRepeat, isMonthRepeat bool
-	var t time.Time
 	var dayOfWeek time.Weekday
+	var duration time.Duration
 
 	datePattern := regexp.MustCompile(`^([0-9]{2})?[0-9]{2}-[0-9]{1,2}-[0-9]{1,2}|[0-9]{1,2}-[0-9]{1,2}$`)
 	timePattern := regexp.MustCompile(`^[0-9]{1,2}:[0-9]{1,2}(:[0-9]{1,2})?$`)
 	minuteSecondPattern := regexp.MustCompile(`^[0-9]{1,2}(:[0-9]{1,2})?$`)
 	dayOfWeekPattern := regexp.MustCompile(`(?i)^sun[a-z]*|mon[a-z]*|tue[a-z]*|wed[a-z]*|thu[a-z]*|fri[a-z]*|sat[a-z]*$`)
 	dayOfMonthPattern := regexp.MustCompile(`(?i)^[0-9]{1,2}(st|nd|rd|th)$`)
+	durationPattern := regexp.MustCompile(`(?i)^~[0-9]+(h[a-z]*|m[a-z]*|s[a-z]*)$`)
 	for _, spec := range specs {
 		switch {
 		case !isRepeat && datePattern.MatchString(spec): // date
@@ -239,25 +271,43 @@ func parseDateTime(input string) (*Time, error) {
 			if err != nil {
 				return nil, err
 			}
+		case durationPattern.MatchString(spec):
+			err := parseDuration(spec, &duration)
+			if err != nil {
+				return nil, err
+			}
 		default:
 			fmt.Printf("Unknown time spec: %s\n", spec)
 		}
 	}
 
-	if isHourRepeat {
-		t = nextHourRepeat(minute, second)
+	var start time.Time
+	var state int
+	if !isRepeat {
+		state = WAIT
+		start = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
+		end := start.Add(duration)
+		if time.Now().After(start) && time.Now().Before(end) {
+			state = NOW
+		} else if time.Now().After(end) {
+			state = EXPIRED
+		}
+	} else if isHourRepeat {
+		start, state = nextHourRepeat(duration, minute, second)
 	} else if isDayRepeat {
-		t = nextDayRepeat(hour, minute, second)
+		start, state = nextDayRepeat(duration, hour, minute, second)
 	} else if isWeekRepeat {
-		t = nextWeekRepeat(dayOfWeek, hour, minute, second)
+		start, state = nextWeekRepeat(duration, dayOfWeek, hour, minute, second)
 	} else if isMonthRepeat {
-		t = nextMonthRepeat(day, hour, minute, second)
-	} else if !isRepeat {
-		t = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
+		start, state = nextMonthRepeat(duration, day, hour, minute, second)
 	} else {
 		return nil, errors.New("invalid time spec")
 	}
-	return &Time{Time: t, Comment: strings.Join(comments, " ")}, nil
+	return &Time{
+		Time:    start,
+		Comment: comment,
+		State:   state,
+	}, nil
 }
 
 func parseDate(spec string, year, month, day *int) error {
@@ -344,51 +394,92 @@ func parseDayOfMonth(spec string, day *int) error {
 	return nil
 }
 
-func nextHourRepeat(minute, second int) time.Time {
+func parseDuration(spec string, duration *time.Duration) error {
+	groups := regexp.MustCompile(`(?i)^~([0-9]+)([a-z]+)$`).FindStringSubmatch(spec)
+	n, err := strconv.Atoi(groups[1])
+	if err != nil {
+		return err
+	}
+	switch groups[2][0] {
+	case 'h', 'H':
+		*duration = time.Hour * time.Duration(n)
+	case 'm', 'M':
+		*duration = time.Minute * time.Duration(n)
+	case 's', 'S':
+		*duration = time.Second * time.Duration(n)
+	}
+	return nil
+}
+
+func nextHourRepeat(duration time.Duration, minute, second int) (time.Time, int) {
+	if duration > time.Hour {
+		duration = time.Hour
+	}
 	y, m, d := time.Now().Date()
 	h, _, _ := time.Now().Clock()
 	t := time.Date(y, m, d, h, minute, second, 0, time.Local)
-	if t.Before(time.Now()) {
+	tEnd := t.Add(duration)
+	if time.Now().After(t) && time.Now().Before(tEnd) {
+		return t, NOW
+	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 1)
 	}
-	return t
+	return t, WAIT
 }
 
-func nextDayRepeat(hour, minute, second int) time.Time {
+func nextDayRepeat(duration time.Duration, hour, minute, second int) (time.Time, int) {
+	if duration > time.Hour*24 {
+		duration = time.Hour * 24
+	}
 	y, m, d := time.Now().Date()
 	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
-	if t.Before(time.Now()) {
+	tEnd := t.Add(duration)
+	if time.Now().After(t) && time.Now().Before(tEnd) {
+		return t, NOW
+	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
 	}
-	return t
+	return t, WAIT
 }
 
-func nextWeekRepeat(dayOfWeek time.Weekday, hour, minute, second int) time.Time {
+func nextWeekRepeat(duration time.Duration, dayOfWeek time.Weekday, hour, minute, second int) (time.Time, int) {
+	if duration > time.Hour*24*7 {
+		duration = time.Hour * 24 * 7
+	}
 	y, m, d := time.Now().Date()
 	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
 	for t.Weekday() != dayOfWeek {
 		t = t.Add(time.Hour * 24)
 	}
-	if t.Before(time.Now()) {
+	tEnd := t.Add(duration)
+	if time.Now().After(t) && time.Now().Before(tEnd) {
+		return t, NOW
+	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
 		for t.Weekday() != dayOfWeek {
 			t = t.Add(time.Hour * 24)
 		}
 	}
-	return t
+	return t, WAIT
 }
 
-func nextMonthRepeat(day, hour, minute, second int) time.Time {
+func nextMonthRepeat(duration time.Duration, day, hour, minute, second int) (time.Time, int) {
+	if duration > time.Hour*24*30 {
+		duration = time.Hour * 24 * 30
+	}
 	y, m, _ := time.Now().Date()
 	t := time.Date(y, m, day, hour, minute, second, 0, time.Local)
 	for t.Day() != day {
 		t = t.Add(time.Hour * 24)
 	}
-	if t.Before(time.Now()) {
+	tEnd := t.Add(duration)
+	if time.Now().After(t) && time.Now().Before(tEnd) {
+		return t, NOW
+	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
 		for t.Day() != day {
 			t = t.Add(time.Hour * 24)
 		}
 	}
-	return t
+	return t, WAIT
 }
