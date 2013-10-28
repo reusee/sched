@@ -70,16 +70,17 @@ const (
 	WAIT
 )
 
-type Time struct {
+type Plan struct {
 	Time    time.Time
 	Comment string
 	State   int
 }
 
 type Job struct {
-	Start *Time
 	Cmd   string
 	Args  []string
+	Path  string
+	Plans []*Plan
 }
 
 func (self *Job) Run() {
@@ -88,39 +89,33 @@ func (self *Job) Run() {
 }
 
 func checkJobs(jobDir string) (hasJob bool) {
-	nextJob := &Job{
-		Start: &Time{Time: time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)},
-	}
+	nextPlan := &Plan{Time: time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)}
+	var nextJob *Job
 	nowJobs := make([]*Job, 0)
 	filepath.Walk(jobDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
-		input, err := os.Open(path)
+		job := &Job{
+			Path:  path,
+			Plans: make([]*Plan, 0),
+		}
+		err = job.Parse()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return nil
 		}
-		ts, cmd, args, err := parse(bufio.NewReader(input))
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return nil
-		}
-		for _, t := range ts {
-			switch t.State {
+		for _, p := range job.Plans {
+			switch p.State {
 			case WAIT:
-				if t.Time.Before(nextJob.Start.Time) {
-					nextJob.Start = t
-					nextJob.Cmd = cmd
-					nextJob.Args = args
+				if p.Time.Before(nextPlan.Time) {
+					nextJob = job
+					nextPlan = p
 				}
 			case NOW:
-				nowJobs = append(nowJobs, &Job{
-					Cmd:  cmd,
-					Args: args,
-				})
+				nowJobs = append(nowJobs, job)
 			case EXPIRED:
-				fmt.Printf("Expired: %s %s %v %s\n", t.Time.Format(time.RFC822), cmd, args, t.Comment)
+				fmt.Printf("Expired: %s %s %v %s\n", p.Time.Format(time.RFC822), job.Cmd, job.Args, p.Comment)
 			}
 		}
 		return nil
@@ -130,10 +125,10 @@ func checkJobs(jobDir string) (hasJob bool) {
 		job.Run()
 	}
 
-	if nextJob.Cmd != "" {
-		fmt.Printf("Next: %s -> %v -> %s\n", nextJob.Start.Time.Format(time.RFC822), nextJob.Start.Time.Sub(time.Now()), nextJob.Start.Comment)
+	if nextJob != nil {
+		fmt.Printf("Next: %s -> %v -> %s\n", nextPlan.Time.Format(time.RFC822), nextPlan.Time.Sub(time.Now()), nextPlan.Comment)
 		select {
-		case <-time.After(nextJob.Start.Time.Sub(time.Now())):
+		case <-time.After(nextPlan.Time.Sub(time.Now())):
 			nextJob.Run()
 			return true
 		case <-signals:
@@ -146,11 +141,17 @@ func checkJobs(jobDir string) (hasJob bool) {
 }
 
 const (
-	parsingTime = iota
+	parsingPlan = iota
 	parsingArgs
 )
 
-func parse(input *bufio.Reader) ([]*Time, string, []string, error) {
+func (self *Job) Parse() error {
+	f, err := os.Open(self.Path)
+	if err != nil {
+		return err
+	}
+	input := bufio.NewReader(f)
+
 	lines := make([]string, 0)
 	for {
 		line, err := input.ReadString('\n')
@@ -161,40 +162,36 @@ func parse(input *bufio.Reader) ([]*Time, string, []string, error) {
 			}
 			break
 		} else if err != nil {
-			return nil, "", nil, errors.New("reading file")
+			return errors.New("reading file")
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
 			lines = append(lines, line)
 		}
 	}
 
-	state := parsingTime
-	ts := make([]*Time, 0)
-	var cmd string
-	args := make([]string, 0)
+	state := parsingPlan
 	for i, line := range lines {
 		switch state {
-		case parsingTime:
+		case parsingPlan:
 			if i == 0 || strings.HasPrefix(line, "and ") {
 				line = strings.TrimPrefix(line, "and ")
-				t, err := parseDateTime(line)
+				p, err := self.parsePlan(line)
 				if err != nil {
-					return nil, "", nil, errors.New("parse datetime")
+					return errors.New("parse datetime")
 				}
-				ts = append(ts, t)
+				self.Plans = append(self.Plans, p)
 			} else {
-				cmd = line
+				self.Cmd = line
 				state = parsingArgs
 			}
 		case parsingArgs:
-			args = append(args, line)
+			self.Args = append(self.Args, line)
 		}
 	}
-
-	return ts, cmd, args, nil
+	return nil
 }
 
-func parseDateTime(input string) (*Time, error) {
+func (self *Job) parsePlan(input string) (*Plan, error) {
 	specs := make([]string, 0)
 	inComment := false
 	comments := make([]string, 0)
@@ -293,17 +290,17 @@ func parseDateTime(input string) (*Time, error) {
 			state = EXPIRED
 		}
 	} else if isHourRepeat {
-		start, state = nextHourRepeat(duration, minute, second)
+		start, state = self.nextHourRepeat(duration, minute, second)
 	} else if isDayRepeat {
-		start, state = nextDayRepeat(duration, hour, minute, second)
+		start, state = self.nextDayRepeat(duration, hour, minute, second)
 	} else if isWeekRepeat {
-		start, state = nextWeekRepeat(duration, dayOfWeek, hour, minute, second)
+		start, state = self.nextWeekRepeat(duration, dayOfWeek, hour, minute, second)
 	} else if isMonthRepeat {
-		start, state = nextMonthRepeat(duration, day, hour, minute, second)
+		start, state = self.nextMonthRepeat(duration, day, hour, minute, second)
 	} else {
 		return nil, errors.New("invalid time spec")
 	}
-	return &Time{
+	return &Plan{
 		Time:    start,
 		Comment: comment,
 		State:   state,
@@ -414,7 +411,7 @@ func parseDuration(spec string, duration *time.Duration) error {
 	return nil
 }
 
-func nextHourRepeat(duration time.Duration, minute, second int) (time.Time, int) {
+func (self *Job) nextHourRepeat(duration time.Duration, minute, second int) (time.Time, int) {
 	if duration > time.Hour {
 		duration = time.Hour
 	}
@@ -430,7 +427,7 @@ func nextHourRepeat(duration time.Duration, minute, second int) (time.Time, int)
 	return t, WAIT
 }
 
-func nextDayRepeat(duration time.Duration, hour, minute, second int) (time.Time, int) {
+func (self *Job) nextDayRepeat(duration time.Duration, hour, minute, second int) (time.Time, int) {
 	if duration > time.Hour*24 {
 		duration = time.Hour * 24
 	}
@@ -445,7 +442,7 @@ func nextDayRepeat(duration time.Duration, hour, minute, second int) (time.Time,
 	return t, WAIT
 }
 
-func nextWeekRepeat(duration time.Duration, dayOfWeek time.Weekday, hour, minute, second int) (time.Time, int) {
+func (self *Job) nextWeekRepeat(duration time.Duration, dayOfWeek time.Weekday, hour, minute, second int) (time.Time, int) {
 	if duration > time.Hour*24*7 {
 		duration = time.Hour * 24 * 7
 	}
@@ -466,7 +463,7 @@ func nextWeekRepeat(duration time.Duration, dayOfWeek time.Weekday, hour, minute
 	return t, WAIT
 }
 
-func nextMonthRepeat(duration time.Duration, day, hour, minute, second int) (time.Time, int) {
+func (self *Job) nextMonthRepeat(duration time.Duration, day, hour, minute, second int) (time.Time, int) {
 	if duration > time.Hour*24*30 {
 		duration = time.Hour * 24 * 30
 	}
