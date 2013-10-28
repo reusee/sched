@@ -81,10 +81,20 @@ type Job struct {
 	Args  []string
 	Path  string
 	Plans []*Plan
+	Log   []time.Time
 }
 
 func (self *Job) Run() {
 	fmt.Printf("Run: %s %v\n", self.Cmd, self.Args)
+	path := self.Path + ".log"
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Printf("Warn: cannot write log file %s, STOP RUNNING\n", path)
+		return
+	}
+	defer f.Close()
+	now := time.Now()
+	f.WriteString(fmt.Sprintf("%d-%d-%d %d:%d:%d\n", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second()))
 	exec.Command(self.Cmd, self.Args...).Start()
 }
 
@@ -96,9 +106,13 @@ func checkJobs(jobDir string) (hasJob bool) {
 		if info.IsDir() {
 			return nil
 		}
+		if strings.HasSuffix(path, ".log") {
+			return nil
+		}
 		job := &Job{
 			Path:  path,
 			Plans: make([]*Plan, 0),
+			Log:   make([]time.Time, 0),
 		}
 		err = job.Parse()
 		if err != nil {
@@ -146,10 +160,16 @@ const (
 )
 
 func (self *Job) Parse() error {
+	err := self.LoadLog()
+	if err != nil {
+		return err
+	}
+
 	f, err := os.Open(self.Path)
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	input := bufio.NewReader(f)
 
 	lines := make([]string, 0)
@@ -189,6 +209,42 @@ func (self *Job) Parse() error {
 		}
 	}
 	return nil
+}
+
+func (self *Job) LoadLog() error {
+	f, err := os.Open(self.Path + ".log")
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	defer f.Close()
+	input := bufio.NewReader(f)
+	for {
+		line, err := input.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if err == io.EOF {
+			if t, err := strptime(line); err == nil {
+				self.Log = append(self.Log, t)
+			}
+			break
+		} else if err != nil {
+			break
+		}
+		if t, err := strptime(line); err == nil {
+			self.Log = append(self.Log, t)
+		}
+	}
+	return nil
+}
+
+func strptime(s string) (time.Time, error) {
+	var year, month, day, hour, minute, second int
+	n, err := fmt.Sscanf(s, "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second)
+	if n != 6 || err != nil {
+		return time.Now(), errors.New("wrong log entry")
+	}
+	return time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local), nil
 }
 
 func (self *Job) parsePlan(input string) (*Plan, error) {
@@ -411,6 +467,15 @@ func parseDuration(spec string, duration *time.Duration) error {
 	return nil
 }
 
+func (self *Job) hasLog(start time.Time, end time.Time) bool {
+	for _, t := range self.Log {
+		if t.After(start) && t.Before(end) {
+			return true
+		}
+	}
+	return false
+}
+
 func (self *Job) nextHourRepeat(duration time.Duration, minute, second int) (time.Time, int) {
 	if duration > time.Hour {
 		duration = time.Hour
@@ -419,7 +484,7 @@ func (self *Job) nextHourRepeat(duration time.Duration, minute, second int) (tim
 	h, _, _ := time.Now().Clock()
 	t := time.Date(y, m, d, h, minute, second, 0, time.Local)
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) {
+	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 1)
@@ -434,7 +499,7 @@ func (self *Job) nextDayRepeat(duration time.Duration, hour, minute, second int)
 	y, m, d := time.Now().Date()
 	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) {
+	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
@@ -452,7 +517,7 @@ func (self *Job) nextWeekRepeat(duration time.Duration, dayOfWeek time.Weekday, 
 		t = t.Add(time.Hour * 24)
 	}
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) {
+	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
@@ -473,7 +538,7 @@ func (self *Job) nextMonthRepeat(duration time.Duration, day, hour, minute, seco
 		t = t.Add(time.Hour * 24)
 	}
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) {
+	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
