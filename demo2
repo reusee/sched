@@ -1,0 +1,25 @@
+2013-10-28 14:40:3
+and 2013-10-28 14:40
+and 13-10-28 14:40:3
+and 13-10-28 14:40
+and every hour 59:59
+and every monday 23:59:59
+and every tue 23:59
+and every Fri 23:59:59
+and every 1st 23:59
+and every 2nd 23:59:59
+and every 3rd 23:59
+and every 18th 23:59:59
+and every day 12:00 ~10m
+and every 24th 13:00 ~10min
+and every Sat 12:00 ~2h
+and every Sun 14:00 ~3hour
+and every hour 58:59 ~20s
+and every hour 57:30 ~40seconds
+and every hour 10:30 ~5min # comments
+and every 1st 10:00 # also comments
+<command>
+<arg1>
+<arg2>
+<arg3>
+...
