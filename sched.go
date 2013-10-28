@@ -65,7 +65,7 @@ func main() {
 }
 
 func checkJobs(jobDir string) (hasJob bool) {
-	nextTime := time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)
+	nextTime := &Time{Time: time.Date(9999, 1, 1, 0, 0, 0, 0, time.Local)}
 	var nextCmd string
 	var nextArgs []string
 	var nextJob string
@@ -84,7 +84,7 @@ func checkJobs(jobDir string) (hasJob bool) {
 			return nil
 		}
 		for _, t := range ts {
-			if t.After(time.Now()) && t.Before(nextTime) {
+			if t.Time.After(time.Now()) && t.Time.Before(nextTime.Time) {
 				nextTime = t
 				nextCmd = cmd
 				nextArgs = args
@@ -93,11 +93,12 @@ func checkJobs(jobDir string) (hasJob bool) {
 		}
 		return nil
 	})
+
 	if nextCmd != "" {
-		fmt.Printf("Next: %s %v %v\n", nextJob, nextTime, nextTime.Sub(time.Now()))
+		fmt.Printf("Next: %s -> %s -> %v -> %s\n", nextJob, nextTime.Time.Format(time.RFC822), nextTime.Time.Sub(time.Now()), nextTime.Comment)
 		select {
-		case <-time.After(nextTime.Sub(time.Now())):
-			fmt.Printf("%v: Run %s %v\n", time.Now(), nextCmd, nextArgs)
+		case <-time.After(nextTime.Time.Sub(time.Now())):
+			fmt.Printf("Run: %s %s %v\n", nextTime.Comment, nextCmd, nextArgs)
 			cmd := exec.Command(nextCmd, nextArgs...)
 			cmd.Start()
 			return true
@@ -115,7 +116,12 @@ const (
 	parsingArgs
 )
 
-func parse(input *bufio.Reader) ([]time.Time, string, []string, error) {
+type Time struct {
+	Time    time.Time
+	Comment string
+}
+
+func parse(input *bufio.Reader) ([]*Time, string, []string, error) {
 	lines := make([]string, 0)
 	for {
 		line, err := input.ReadString('\n')
@@ -134,7 +140,7 @@ func parse(input *bufio.Reader) ([]time.Time, string, []string, error) {
 	}
 
 	state := parsingTime
-	ts := make([]time.Time, 0)
+	ts := make([]*Time, 0)
 	var cmd string
 	args := make([]string, 0)
 	for i, line := range lines {
@@ -159,14 +165,23 @@ func parse(input *bufio.Reader) ([]time.Time, string, []string, error) {
 	return ts, cmd, args, nil
 }
 
-func parseDateTime(input string) (time.Time, error) {
-	specs := strings.Split(input, " ")
-	for i, spec := range specs {
-		specs[i] = strings.TrimSpace(spec)
+func parseDateTime(input string) (*Time, error) {
+	specs := make([]string, 0)
+	inComment := false
+	comments := make([]string, 0)
+	for _, spec := range strings.Split(input, " ") {
+		if inComment {
+			comments = append(comments, spec)
+		} else if strings.HasPrefix(spec, "#") {
+			comments = append(comments, spec[1:])
+			inComment = true
+		} else {
+			specs = append(specs, spec)
+		}
 	}
 	var year, month, day, hour, minute, second int
 	var isRepeat, isHourRepeat, isDayRepeat, isWeekRepeat, isMonthRepeat bool
-	var ret time.Time
+	var t time.Time
 	var dayOfWeek time.Weekday
 
 	datePattern := regexp.MustCompile(`^([0-9]{2})?[0-9]{2}-[0-9]{1,2}-[0-9]{1,2}|[0-9]{1,2}-[0-9]{1,2}$`)
@@ -179,12 +194,12 @@ func parseDateTime(input string) (time.Time, error) {
 		case !isRepeat && datePattern.MatchString(spec): // date
 			err := parseDate(spec, &year, &month, &day)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 		case !isRepeat && timePattern.MatchString(spec): // time
 			err := parseTime(spec, &hour, &minute, &second)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 		case spec == "every": // repeat
 			isRepeat = true
@@ -195,54 +210,54 @@ func parseDateTime(input string) (time.Time, error) {
 		case isRepeat && dayOfWeekPattern.MatchString(spec):
 			err := parseDayOfWeek(spec, &dayOfWeek)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 			isWeekRepeat = true
 		case isWeekRepeat && timePattern.MatchString(spec):
 			err := parseTime(spec, &hour, &minute, &second)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 		case isRepeat && dayOfMonthPattern.MatchString(spec):
 			err := parseDayOfMonth(spec, &day)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 			isMonthRepeat = true
 		case isMonthRepeat && timePattern.MatchString(spec):
 			err := parseTime(spec, &hour, &minute, &second)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 		case isHourRepeat && minuteSecondPattern.MatchString(spec):
 			err := parseMinuteSecond(spec, &minute, &second)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 		case isDayRepeat && timePattern.MatchString(spec):
 			err := parseTime(spec, &hour, &minute, &second)
 			if err != nil {
-				return time.Now(), err
+				return nil, err
 			}
 		default:
-			fmt.Printf("Error time spec: %s\n", spec)
+			fmt.Printf("Unknown time spec: %s\n", spec)
 		}
 	}
 
 	if isHourRepeat {
-		ret = nextHourRepeat(minute, second)
+		t = nextHourRepeat(minute, second)
 	} else if isDayRepeat {
-		ret = nextDayRepeat(hour, minute, second)
+		t = nextDayRepeat(hour, minute, second)
 	} else if isWeekRepeat {
-		ret = nextWeekRepeat(dayOfWeek, hour, minute, second)
+		t = nextWeekRepeat(dayOfWeek, hour, minute, second)
 	} else if isMonthRepeat {
-		ret = nextMonthRepeat(day, hour, minute, second)
+		t = nextMonthRepeat(day, hour, minute, second)
 	} else if !isRepeat {
-		ret = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
+		t = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
 	} else {
-		return time.Now(), errors.New("invalid time spec")
+		return nil, errors.New("invalid time spec")
 	}
-	return ret, nil
+	return &Time{Time: t, Comment: strings.Join(comments, " ")}, nil
 }
 
 func parseDate(spec string, year, month, day *int) error {
