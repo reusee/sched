@@ -469,9 +469,16 @@ func parseDuration(spec string, duration *time.Duration) error {
 
 func (self *Job) hasLog(start time.Time, end time.Time) bool {
 	for _, t := range self.Log {
-		if t.After(start) && t.Before(end) {
+		if t.After(start) && t.Before(end) || t == start || t == end {
 			return true
 		}
+	}
+	return false
+}
+
+func between(t, start, end time.Time) bool {
+	if t.After(start) && t.Before(end) || t == start || t == end {
+		return true
 	}
 	return false
 }
@@ -484,7 +491,7 @@ func (self *Job) nextHourRepeat(duration time.Duration, minute, second int) (tim
 	h, _, _ := time.Now().Clock()
 	t := time.Date(y, m, d, h, minute, second, 0, time.Local)
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
+	if between(time.Now(), t, tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 1)
@@ -499,7 +506,7 @@ func (self *Job) nextDayRepeat(duration time.Duration, hour, minute, second int)
 	y, m, d := time.Now().Date()
 	t := time.Date(y, m, d, hour, minute, second, 0, time.Local)
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
+	if between(time.Now(), t, tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
@@ -517,7 +524,7 @@ func (self *Job) nextWeekRepeat(duration time.Duration, dayOfWeek time.Weekday, 
 		t = t.Add(time.Hour * 24)
 	}
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
+	if between(time.Now(), t, tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
@@ -538,7 +545,7 @@ func (self *Job) nextMonthRepeat(duration time.Duration, day, hour, minute, seco
 		t = t.Add(time.Hour * 24)
 	}
 	tEnd := t.Add(duration)
-	if time.Now().After(t) && time.Now().Before(tEnd) && !self.hasLog(t, tEnd) {
+	if between(time.Now(), t, tEnd) && !self.hasLog(t, tEnd) {
 		return t, NOW
 	} else if time.Now().After(t) {
 		t = t.Add(time.Hour * 24)
