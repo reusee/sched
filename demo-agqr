@@ -1,0 +1,62 @@
+# Monday
+every mon 7:30 ~30m # 木戸衣吹・エリイちゃんの「ゆめいろ学院 Doki☆Doki参観日」
+and every mon 8:00 ~30m # ラジオ☆聡美はっけん伝！佐藤聡美
+and every mon 16:00 ~60min # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！ 上坂すみれ
+and every mon 20:00 ~30m # 野中藍・石川由依のラジオOperating System
+and every mon 20:30 ~30m # ゆいかおりの実♪デジタル 小倉 唯・石原夏織
+and every mon 22:00 ~60m # 阿澄佳奈 星空ひなたぼっこ阿澄佳奈
+
+# Tuesday
+and every tue 1:30 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！上坂すみれ
+and every tue 6:00 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！上坂すみれ
+and every tue 8:00 ~30m # 野中藍・石川由依のラジオOperating System
+and every tue 10:00 ~60m #  阿澄佳奈 星空ひなたぼっこ
+and every tue 16:00 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！ 小松未可子
+and every tue 20:00 ~30m # 井上麻里奈・下田麻美のIT革命！
+and every tue 20:30 ~30m # 早見沙織のふり～すたいる♪
+and every tue 22:30 ~30m # 種田梨沙と新田恵海の新種ラジオ
+
+# Wednesday
+and every wed 1:30 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！小松未可子
+and every wed 6:00 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！小松未可子
+and every wed 8:00 ~30m # 井上麻里奈・下田麻美のIT革命！
+and every wed 8:30 ~30m # 早見沙織のふり～すたいる♪
+and every wed 10:30 ~30m # 種田梨沙と新田恵海の「新種ラジオ」
+and every wed 16:00 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！ 大久保瑠美
+and every wed 20:00 ~60m # 花澤香菜のひとりでできるかな？
+and every wed 22:00 ~30m # 矢作・佐倉のちょっとお時間よろしいですか 矢作紗友里 佐倉綾音
+and every wed 22:30 ~30m # あおい・さおりの新番組悠木碧、早見沙織
+
+# Thursday
+and every thu 1:30 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！大久保瑠美
+and every thu 6:00 ~60m # Ａ＆Ｇ　ＮＥＸＴ　ＧＥＮＥＲＡＴＩＯＮ　Ｌａｄ ｙ　Ｇｏ！！大久保瑠美
+and every thu 8:00 ~60m # 花澤香菜のひとりでできるかな？
+and every thu 10:00 ~30m # 矢作・佐倉のちょっとお時間よろしいですか 矢作紗友里 佐倉綾音
+and every thu 10:30 ~30m # あおい・さおりの新番組悠木碧、早見沙織
+and every thu 23:30 ~30m # 喜多村英梨の英立魔法学園
+
+# Friday
+and every 11:30 ~30m # 喜多村英梨の英立魔法学園
+and every fri 20:00 ~60m # ラジオ☆聡美はっけん伝！ 佐藤聡美
+
+# Saturday
+and every sat 1:00 ~30m # 木戸衣吹・エリイちゃんの「ゆめいろ学院 Doki☆Doki参観日」
+and every sat 18:00 ~30m # 藤田咲のふじP
+and every sat 23:00 ~30m # 戸松遥のココロ☆ハルカス 戸松遥
+
+# Sunday
+and every sun 7:00 ~30m # 戸松遥のココロ☆ハルカス
+and every sun 8:00 ~60m # 花澤香菜のひとりでできるかな
+and every sun 9:30 ~30m # 矢作・佐倉のちょっとお時間よろしいですか 矢作紗友里 佐倉綾音
+and every sun 10:00 ~30m # あおいさおりの新番組 悠木碧・早見沙織
+and every sun 10:30 ~30m # 早見沙織のふり～すたいる♪
+and every sun 12:00 ~60m # 阿澄佳奈星空ひなたぼっこ
+and every sun 14:00 ~60m # ラジオ☆聡美はっけん伝！
+and every sun 20:00 ~30m # 佐倉綾音Ayane＊LDK 佐倉綾音
+and every sun 21:00 ~30m # はみらじ！！ 荒川美穂 大坪由佳 山本希望
+and every sun 22:00 ~30m # 阿部敦・植田佳奈のガンストうぇ～ぶ！阿部敦 植 田佳奈
+and every sun 22:30 ~30m # 大久保瑠美・原紗友里　青春学園 Girls High↑↑
+
+xfce4-terminal
+-e
+/media/store/script/agqr

@@ -94,7 +94,11 @@ func (self *Job) Run() {
 	}
 	defer f.Close()
 	now := time.Now()
-	f.WriteString(fmt.Sprintf("%d-%d-%d %d:%d:%d\n", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second()))
+	_, err = f.WriteString(fmt.Sprintf("%d-%d-%d %d:%d:%d\n", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second()))
+	if err != nil {
+		fmt.Printf("Warn: cannot write log file %s, STOP RUNNING\n", path)
+		return
+	}
 	exec.Command(self.Cmd, self.Args...).Start()
 }
 
