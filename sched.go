@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/howeyc/fsnotify"
 	"io"
 	"log"
 	"os"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/fsnotify.v1"
 )
 
 var signals = make(chan os.Signal)
@@ -32,6 +33,8 @@ func init() {
 }
 
 func main() {
+	defer watcher.Close()
+
 	user, err := user.Current()
 	if err != nil {
 		log.Fatal(err)
@@ -46,7 +49,7 @@ func main() {
 	} else if err != nil {
 		log.Fatal(err)
 	}
-	err = watcher.Watch(jobDir)
+	err = watcher.Add(jobDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,7 +60,7 @@ func main() {
 		} else {
 			select {
 			case <-signals:
-			case <-watcher.Event:
+			case <-watcher.Events:
 			}
 			continue
 		}
@@ -99,7 +102,7 @@ func (self *Job) Run() {
 		fmt.Printf("Warn: cannot write log file %s, STOP RUNNING\n", path)
 		return
 	}
-	exec.Command(self.Cmd, self.Args...).Start()
+	go exec.Command(self.Cmd, self.Args...).Run()
 }
 
 func checkJobs(jobDir string) (hasJob bool) {
@@ -151,7 +154,7 @@ func checkJobs(jobDir string) (hasJob bool) {
 			return true
 		case <-signals:
 			return true
-		case <-watcher.Event:
+		case <-watcher.Events:
 			return true
 		}
 	}
